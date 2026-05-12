@@ -92,11 +92,34 @@ def build_email_html(summaries, report_url, date_str):
 </html>"""
 
 
-def send_email(subject, html_body, from_addr, to_addr, app_password):
+def parse_recipients(to_email_str):
+    """Parse comma-separated email addresses and return list of valid recipients."""
+    raw_addresses = to_email_str.split(",")
+    recipients = []
+    for addr in raw_addresses:
+        stripped = addr.strip()
+        if stripped:
+            recipients.append(stripped)
+    return recipients
+
+
+def validate_recipients(recipients):
+    """Validate that all recipients contain @ symbol."""
+    for addr in recipients:
+        if "@" not in addr:
+            raise ValueError(f"Invalid email address (missing @): '{addr}'")
+
+
+def send_email(subject, html_body, from_addr, to_addrs, app_password):
+    if isinstance(to_addrs, list):
+        to_addr_display = ", ".join(to_addrs)
+    else:
+        to_addr_display = to_addrs
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_addr
-    msg["To"] = to_addr
+    msg["To"] = to_addr_display
 
     plain = re.sub(r"<[^>]+>", "", html_body)
     plain = re.sub(r"\s+", " ", plain).strip()
@@ -105,12 +128,12 @@ def send_email(subject, html_body, from_addr, to_addr, app_password):
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(from_addr, app_password)
-        server.sendmail(from_addr, to_addr, msg.as_string())
+        server.sendmail(from_addr, to_addrs, msg.as_string())
 
 
 def main():
     gmail_address = os.environ["GMAIL_ADDRESS"]
-    gmail_app_password = os.environ["GMAIL_APP_PASSWORD"]
+    smtp_credential = os.environ["GMAIL_APP_PASSWORD"]
     to_email = os.environ["TO_EMAIL"]
     report_url = os.environ.get("GITHUB_PAGES_URL", "")
 
@@ -129,8 +152,14 @@ def main():
     email_html = build_email_html(summaries, report_url, date_str)
     subject = f"Daily News Report — {date_str}"
 
-    print(f"Sending email to {to_email}...")
-    send_email(subject, email_html, gmail_address, to_email, gmail_app_password)
+    recipients = parse_recipients(to_email)
+    if not recipients:
+        print("Error: TO_EMAIL contains no valid email addresses.")
+        sys.exit(1)
+    validate_recipients(recipients)
+
+    print(f"Sending email to {', '.join(recipients)}...")
+    send_email(subject, email_html, gmail_address, recipients, smtp_credential)
     print("Email sent successfully.")
 
 
